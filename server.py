@@ -160,12 +160,12 @@ def computeStatus():
 '''
 TODO:
  - multiple games
- - connection reset handling
  - choose local versus networked game
  - AI opponent, minimax search
+
+MINOR changes:
  - add locking for all operations. a = threading.Lock()
  - /play-move /reset-game should be POST (not GET)
- - use HTTP cookies for password or player_code information
 
 TODO cleanup:
  - reduce number of global variable
