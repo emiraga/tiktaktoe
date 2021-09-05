@@ -41,7 +41,6 @@ function Game(props) {
   var [xIsNext, setXIsNext] = React.useState(true);
   var [status, setStatus] = React.useState({});
   var [score, setScore] = React.useState({});
-  var [password, setPassword] = React.useState('');
 
   React.useEffect(
     () => {
@@ -53,8 +52,8 @@ function Game(props) {
         setXIsNext(data.x_is_next);
         setStatus(data.status);
         setScore(data.score);
-        setPassword(data.player_password);
       };
+      window.testCloseStream = () => eventSource.close();
       return () => eventSource.close();
     },
     []
@@ -65,13 +64,12 @@ function Game(props) {
       return;
     }
     // TODO: use encodeURI or encodeURIComponent
-    fetch('/play-move?player=' + playerCode + '&move=' + i + '&password=' + password)
+    fetch('/play-move?move=' + i)
       .then(r => null, e => console.log(e));
   }
 
   function handleReset() {
-    // TODO: use encodeURI or encodeURIComponent
-    fetch('/reset-game?password=' + password)
+    fetch('/reset-game')
       .then(r => null, e => console.log(e));
   }
 

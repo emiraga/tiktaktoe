@@ -40,8 +40,8 @@ condition = threading.Condition()
 def play_move():
 	global squares, x_is_next
 	move = int(request.args['move'])
-	player = request.args['player']
-	if request.args['password'] != password[player]:
+	player = request.cookies['player_code']
+	if request.cookies['password'] != password[player]:
 		raise Exception('Wrong password for player ' + player)
 	player_is_x = player == 'X'
 	if (player_is_x == x_is_next and
@@ -68,7 +68,7 @@ def updateScoreNewMove():
 @app.route("/reset-game")
 def reset_game():
 	global squares, x_is_next, x_goes_next
-	if request.args['password'] != password['X'] and request.args['password'] != password['O']:
+	if request.cookies['password'] != password['X'] and request.cookies['password'] != password['O']:
 		raise Exception('Wrong password')
 
 	if computeStatus()['is_restartable']:
@@ -82,15 +82,23 @@ def reset_game():
 
 @app.route("/stream")
 def stream():
-	player_code = get_player_code()
-	player_password = get_new_password()
+	cookie_player = request.cookies.get('player_code')
+	cookie_password = request.cookies.get('password')
 	global password
-	password[player_code] = player_password
+	if cookie_player and password[cookie_player] == cookie_password:
+		# Reuse existing password
+		player_code = cookie_player
+		player_password = cookie_password
+	else:
+		# Generate new code and password
+		player_code = get_player_code()
+		player_password = get_new_password()
+		password[player_code] = player_password
+
 	def eventStream():
 		while True:
 			yield 'data: {}\n\n'.format(json.dumps({
 				'player_code': player_code,
-				'player_password': player_password,
 				'squares': squares,
 				'x_is_next': x_is_next,
 				'status': computeStatus(),
@@ -99,7 +107,10 @@ def stream():
 			with condition:
 				condition.wait()
 
-	return Response(eventStream(), mimetype="text/event-stream")
+	respose = Response(eventStream(), mimetype="text/event-stream")
+	respose.set_cookie('player_code', player_code)
+	respose.set_cookie('password', player_password)
+	return respose
 
 
 
@@ -149,7 +160,6 @@ def computeStatus():
 '''
 TODO:
  - multiple games
- - password per player per game
  - connection reset handling
  - choose local versus networked game
  - AI opponent, minimax search
