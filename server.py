@@ -1,7 +1,8 @@
 from flask import Flask, Response, redirect, request
-import time
 import json
 import threading
+import random
+import string
 
 
 app = Flask(__name__, static_url_path='', static_folder='.')
@@ -23,6 +24,10 @@ def get_player_code():
 		return 'O'
 
 
+def get_new_password():
+	return ''.join(random.choice(string.ascii_uppercase) for _ in range(10))
+
+password = {'X': None, 'O': None}
 squares = [None] * 9
 x_is_next = True
 x_goes_next = False
@@ -36,6 +41,8 @@ def play_move():
 	global squares, x_is_next
 	move = int(request.args['move'])
 	player = request.args['player']
+	if request.args['password'] != password[player]:
+		raise Exception('Wrong password for player ' + player)
 	player_is_x = player == 'X'
 	if (player_is_x == x_is_next and
 			squares[move] is None and
@@ -46,6 +53,7 @@ def play_move():
 		with condition:
 			condition.notify_all()
 	return ''
+
 
 def updateScoreNewMove():
 	winner = computeStatus()['winning_player']
@@ -60,6 +68,9 @@ def updateScoreNewMove():
 @app.route("/reset-game")
 def reset_game():
 	global squares, x_is_next, x_goes_next
+	if request.args['password'] != password['X'] and request.args['password'] != password['O']:
+		raise Exception('Wrong password')
+
 	if computeStatus()['is_restartable']:
 		squares = [None] * 9
 		x_is_next = x_goes_next
@@ -72,10 +83,14 @@ def reset_game():
 @app.route("/stream")
 def stream():
 	player_code = get_player_code()
+	player_password = get_new_password()
+	global password
+	password[player_code] = player_password
 	def eventStream():
 		while True:
 			yield 'data: {}\n\n'.format(json.dumps({
 				'player_code': player_code,
+				'player_password': player_password,
 				'squares': squares,
 				'x_is_next': x_is_next,
 				'status': computeStatus(),
@@ -133,7 +148,6 @@ def computeStatus():
 
 '''
 TODO:
- - keep score for players
  - multiple games
  - password per player per game
  - connection reset handling
@@ -141,6 +155,7 @@ TODO:
  - AI opponent, minimax search
  - add locking for all operations. a = threading.Lock()
  - /play-move /reset-game should be POST (not GET)
+ - use HTTP cookies for password or player_code information
 
 TODO cleanup:
  - reduce number of global variable
