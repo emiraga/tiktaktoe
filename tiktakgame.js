@@ -59,6 +59,8 @@ function Game(props) {
     []
   );
 
+  //proba
+
   function handleClick(i){
     if (status.winning_player || squares[i]){
       return;
