@@ -25,6 +25,9 @@ def get_player_code():
 
 squares = [None] * 9
 x_is_next = True
+x_goes_next = False
+score_for_x = 0
+score_for_o = 0
 condition = threading.Condition()
 
 
@@ -39,16 +42,28 @@ def play_move():
 			not computeStatus()['winning_player']):
 		squares[move] = player
 		x_is_next = not x_is_next
+		updateScoreNewMove()
 		with condition:
 			condition.notify_all()
 	return ''
 
+def updateScoreNewMove():
+	winner = computeStatus()['winning_player']
+	if winner == 'X':
+		global score_for_x
+		score_for_x += 1
+	elif winner == 'O':
+		global score_for_o
+		score_for_o += 1
+
+
 @app.route("/reset-game")
 def reset_game():
-	global squares, x_is_next
+	global squares, x_is_next, x_goes_next
 	if computeStatus()['is_restartable']:
 		squares = [None] * 9
-		x_is_next = True
+		x_is_next = x_goes_next
+		x_goes_next = not x_goes_next
 		with condition:
 			condition.notify_all()
 	return ''
@@ -64,6 +79,7 @@ def stream():
 				'squares': squares,
 				'x_is_next': x_is_next,
 				'status': computeStatus(),
+				'score': {'X': score_for_x, 'O': score_for_o},
 			}))
 			with condition:
 				condition.wait()
@@ -117,7 +133,6 @@ def computeStatus():
 
 '''
 TODO:
- - change first player turn (first time X, second time O is first)
  - keep score for players
  - multiple games
  - password per player per game
@@ -125,6 +140,7 @@ TODO:
  - choose local versus networked game
  - AI opponent, minimax search
  - add locking for all operations. a = threading.Lock()
+ - /play-move /reset-game should be POST (not GET)
 
 TODO cleanup:
  - reduce number of global variable

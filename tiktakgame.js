@@ -40,6 +40,7 @@ function Game(props) {
   var [squares, setSquares] = React.useState(Array(9).fill(null));
   var [xIsNext, setXIsNext] = React.useState(true);
   var [status, setStatus] = React.useState({});
+  var [score, setScore] = React.useState({});
 
   React.useEffect(
     () => {
@@ -50,6 +51,7 @@ function Game(props) {
         setSquares(data.squares);
         setXIsNext(data.x_is_next);
         setStatus(data.status);
+        setScore(data.score);
       };
       return () => eventSource.close();
     },
@@ -93,6 +95,9 @@ function Game(props) {
       <div className="game-info">
         <div>You are: {playerCode}</div>
         <div>{status.message}</div>
+        <hr />
+        <div>X vs O</div>
+        <div>{score.X} : {score.O}</div>
         {reset_button}
       </div>
     </div>
