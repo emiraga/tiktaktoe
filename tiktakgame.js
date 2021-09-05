@@ -39,34 +39,34 @@ function Game(props) {
   var [playerCode, setPlayerCode] = React.useState(false);
   var [squares, setSquares] = React.useState(Array(9).fill(null));
   var [xIsNext, setXIsNext] = React.useState(true);
+  var [status, setStatus] = React.useState({});
 
-  React.useEffect(() => {
-    var eventSource = new EventSource("/stream");
-    eventSource.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      setPlayerCode(data.player_code);
-      setSquares(data.squares);
-      setXIsNext(data.x_is_next);
-    };
-    return () => eventSource.close();
-  }, []);
+  React.useEffect(
+    () => {
+      var eventSource = new EventSource("/stream");
+      eventSource.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        setPlayerCode(data.player_code);
+        setSquares(data.squares);
+        setXIsNext(data.x_is_next);
+        setStatus(data.status);
+      };
+      return () => eventSource.close();
+    },
+    []
+  );
 
   function handleClick(i){
-    if (calculateWinner(squares) || squares[i]){
+    if (status.winning_player || squares[i]){
       return;
     }
     fetch('/play-move?player=' + playerCode + '&move=' + i)
+      .then(r => null, e => console.log(e));
   }
 
-  const winner = calculateWinner(squares);
-
-  let status;
-  if (winner) {
-    status = 'Winner ' + winner;
-  } else if (calculateIsDraw(squares)) {
-    status = 'Nobody wins :(';
-  } else {
-    status = 'Next player: ' + (xIsNext ? 'X' : 'O');
+  function handleReset() {
+    fetch('/reset-game')
+      .then(r => null, e => console.log(e));
   }
 
   if (!playerCode) {
@@ -75,6 +75,11 @@ function Game(props) {
         <p>Waiting on the server...</p>
       </div>
     )
+  }
+
+  let reset_button = <React.Fragment />;
+  if (status.is_restartable) {
+    reset_button = <input type="button" value="Reset" onClick={() => handleReset()} ></input>;
   }
 
   return (
@@ -87,39 +92,11 @@ function Game(props) {
       </div>
       <div className="game-info">
         <div>You are: {playerCode}</div>
-        <div>{status}</div>
+        <div>{status.message}</div>
+        {reset_button}
       </div>
     </div>
   );
-}
-
-function calculateIsDraw(squares) {
-  for (let i=0; i<squares.length; i++){
-    if (!squares[i]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function calculateWinner(squares) {
-  const lines = [
-    [0, 1, 2],
-    [3, 4, 5],
-    [6, 7, 8],
-    [0, 3, 6],
-    [1, 4, 7],
-    [2, 5, 8],
-    [0, 4, 8],
-    [2, 4, 6],
-  ];
-  for (let i=0; i<lines.length; i++){
-    const [a,b,c] = lines[i];
-    if (squares[a] && squares[a]===squares[b] && squares[a]===squares[c]) {
-      return squares[a];
-    }
-  }
-  return null;
 }
 
 ReactDOM.render(
