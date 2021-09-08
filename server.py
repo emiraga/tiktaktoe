@@ -27,56 +27,84 @@ def get_player_code():
 def get_new_password():
 	return ''.join(random.choice(string.ascii_uppercase) for _ in range(10))
 
-password = {'X': None, 'O': None}
-squares = [None] * 9
-x_is_next = True
-x_goes_next = False
-score_for_x = 0
-score_for_o = 0
-condition = threading.Condition()
 
+last_game_id = 0
+games = {}
+
+
+def assign_game_to_new_player():
+	global last_game_id
+	global games
+	if not last_game_id or not games[last_game_id]['single_player']:
+		last_game_id+=1
+		games[last_game_id]={
+			'password' : {'X': None, 'O': None},
+			'squares' : [None] * 9,
+			'x_is_next' : True,
+			'x_goes_next' : False,
+			'score_for_x' : 0,
+			'score_for_o' : 0,
+			'condition' : threading.Condition(),
+			'single_player': True,
+		}
+		return last_game_id,'X'
+	else:
+		games[last_game_id]['single_player']=False
+		return last_game_id,'O'
+
+
+def check_password_for_player():
+	cookie_player = request.cookies.get('player_code')
+	cookie_password = request.cookies.get('password')
+	cookie_game_id = int(request.cookies.get('game_id', 0))
+	if (cookie_player and cookie_game_id and
+		cookie_game_id in games and
+		games[cookie_game_id]['password'][cookie_player] == cookie_password):
+			return True
+	return False
 
 @app.route("/play-move")
 def play_move():
-	global squares, x_is_next
+	global games
+	game_id = int(request.cookies.get('game_id', 0))
 	move = int(request.args['move'])
 	player = request.cookies['player_code']
-	if request.cookies['password'] != password[player]:
+	if not check_password_for_player():
 		raise Exception('Wrong password for player ' + player)
 	player_is_x = player == 'X'
-	if (player_is_x == x_is_next and
-			squares[move] is None and
-			not computeStatus()['winning_player']):
-		squares[move] = player
-		x_is_next = not x_is_next
-		updateScoreNewMove()
-		with condition:
-			condition.notify_all()
+	if (player_is_x == games[game_id]['x_is_next'] and
+			games[game_id]['squares'][move] is None and
+			not computeStatus(game_id)['winning_player']):
+		games[game_id]['squares'][move] = player
+		games[game_id]['x_is_next'] = not games[game_id]['x_is_next']
+		updateScoreNewMove(game_id)
+		with games[game_id]['condition']:
+			games[game_id]['condition'].notify_all()
 	return ''
 
 
-def updateScoreNewMove():
-	winner = computeStatus()['winning_player']
+def updateScoreNewMove(game_id):
+	global games
+	winner = computeStatus(game_id)['winning_player']
 	if winner == 'X':
-		global score_for_x
-		score_for_x += 1
+		games[game_id]['score_for_x'] += 1
 	elif winner == 'O':
-		global score_for_o
-		score_for_o += 1
+		games[game_id]['score_for_o'] += 1
 
 
 @app.route("/reset-game")
 def reset_game():
-	global squares, x_is_next, x_goes_next
-	if request.cookies['password'] != password['X'] and request.cookies['password'] != password['O']:
+	global games
+	game_id = int(request.cookies.get('game_id', 0))
+	if not check_password_for_player():
 		raise Exception('Wrong password')
 
-	if computeStatus()['is_restartable']:
-		squares = [None] * 9
-		x_is_next = x_goes_next
-		x_goes_next = not x_goes_next
-		with condition:
-			condition.notify_all()
+	if computeStatus(game_id)['is_restartable']:
+		games[game_id]['squares'] = [None] * 9
+		games[game_id]['x_is_next'] = games[game_id]['x_goes_next']
+		games[game_id]['x_goes_next'] = not games[game_id]['x_goes_next']
+		with games[game_id]['condition']:
+			games[game_id]['condition'].notify_all()
 	return ''
 
 
@@ -84,44 +112,47 @@ def reset_game():
 def stream():
 	cookie_player = request.cookies.get('player_code')
 	cookie_password = request.cookies.get('password')
-	global password
-	if cookie_player and password[cookie_player] == cookie_password:
+	cookie_game_id = int(request.cookies.get('game_id', 0))
+	global games
+	if cookie_player and cookie_game_id and cookie_game_id in games and games[cookie_game_id]['password'][cookie_player] == cookie_password:
 		# Reuse existing password
+		game_id=cookie_game_id
 		player_code = cookie_player
 		player_password = cookie_password
 	else:
 		# Generate new code and password
-		player_code = get_player_code()
+		game_id, player_code = assign_game_to_new_player()
 		player_password = get_new_password()
-		password[player_code] = player_password
+		games[game_id]['password'][player_code] = player_password
 
 	def eventStream():
 		while True:
 			yield 'data: {}\n\n'.format(json.dumps({
 				'player_code': player_code,
-				'squares': squares,
-				'x_is_next': x_is_next,
-				'status': computeStatus(),
-				'score': {'X': score_for_x, 'O': score_for_o},
+				'squares': games[game_id]['squares'],
+				'x_is_next': games[game_id]['x_is_next'],
+				'status': computeStatus(game_id),
+				'score': {'X': games[game_id]['score_for_x'], 'O': games[game_id]['score_for_o']},
 			}))
-			with condition:
-				condition.wait()
+			with games[game_id]['condition']:
+				games[game_id]['condition'].wait()
 
 	respose = Response(eventStream(), mimetype="text/event-stream")
 	respose.set_cookie('player_code', player_code)
 	respose.set_cookie('password', player_password)
+	respose.set_cookie('game_id', str(game_id))
 	return respose
 
 
 
-def calculateIsBoardFilled():
+def calculateIsBoardFilled(squares):
 	for sq in squares:
 		if not sq:
 			return False
 	return True
 
 
-def calculateWinner():
+def calculateWinner(squares):
 	lines = [
 		[0, 1, 2],
 		[3, 4, 5],
@@ -138,18 +169,18 @@ def calculateWinner():
 	return None
 
 
-def computeStatus():
-	player = calculateWinner()
+def computeStatus(game_id):
+	player = calculateWinner(games[game_id]['squares'])
 	winning_player = None
 	if player:
 		winning_player = player
 		message = 'Winner ' + player
 		is_restartable = True
-	elif calculateIsBoardFilled():
+	elif calculateIsBoardFilled(games[game_id]['squares']):
 		message = 'Nobody wins :('
 		is_restartable = True
 	else:
-		message = 'Next player: ' + ('X' if x_is_next else 'O')
+		message = 'Next player: ' + ('X' if games[game_id]['x_is_next'] else 'O')
 		is_restartable = False
 	return {
 		'winning_player': winning_player,
@@ -159,9 +190,9 @@ def computeStatus():
 
 '''
 TODO:
- - multiple games
  - choose local versus networked game
  - AI opponent, minimax search
+ - Automatic Testing
 
 MINOR changes:
  - add locking for all operations. a = threading.Lock()

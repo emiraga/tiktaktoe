@@ -53,13 +53,11 @@ function Game(props) {
         setStatus(data.status);
         setScore(data.score);
       };
-      window.testCloseStream = () => eventSource.close();
       return () => eventSource.close();
     },
     []
   );
 
-  //proba
 
   function handleClick(i){
     if (status.winning_player || squares[i]){
