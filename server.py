@@ -5,31 +5,12 @@ import random
 import string
 
 
-app = Flask(__name__, static_url_path='', static_folder='.')
-
-@app.route("/")
-def hello_world():
-	return redirect("/index.html")
-
-
-next_player_is_x = 0
-def get_player_code():
-	global next_player_is_x
-	if next_player_is_x:
-		next_player_is_x = False
-		return 'X'
-
-	if not next_player_is_x:
-		next_player_is_x = True
-		return 'O'
+last_game_id = 0
+games = {}
 
 
 def get_new_password():
 	return ''.join(random.choice(string.ascii_uppercase) for _ in range(10))
-
-
-last_game_id = 0
-games = {}
 
 
 def assign_game_to_new_player():
@@ -63,25 +44,6 @@ def check_password_for_player():
 			return True
 	return False
 
-@app.route("/play-move")
-def play_move():
-	global games
-	game_id = int(request.cookies.get('game_id', 0))
-	move = int(request.args['move'])
-	player = request.cookies['player_code']
-	if not check_password_for_player():
-		raise Exception('Wrong password for player ' + player)
-	player_is_x = player == 'X'
-	if (player_is_x == games[game_id]['x_is_next'] and
-			games[game_id]['squares'][move] is None and
-			not computeStatus(game_id)['winning_player']):
-		games[game_id]['squares'][move] = player
-		games[game_id]['x_is_next'] = not games[game_id]['x_is_next']
-		updateScoreNewMove(game_id)
-		with games[game_id]['condition']:
-			games[game_id]['condition'].notify_all()
-	return ''
-
 
 def updateScoreNewMove(game_id):
 	global games
@@ -90,59 +52,6 @@ def updateScoreNewMove(game_id):
 		games[game_id]['score_for_x'] += 1
 	elif winner == 'O':
 		games[game_id]['score_for_o'] += 1
-
-
-@app.route("/reset-game")
-def reset_game():
-	global games
-	game_id = int(request.cookies.get('game_id', 0))
-	if not check_password_for_player():
-		raise Exception('Wrong password')
-
-	if computeStatus(game_id)['is_restartable']:
-		games[game_id]['squares'] = [None] * 9
-		games[game_id]['x_is_next'] = games[game_id]['x_goes_next']
-		games[game_id]['x_goes_next'] = not games[game_id]['x_goes_next']
-		with games[game_id]['condition']:
-			games[game_id]['condition'].notify_all()
-	return ''
-
-
-@app.route("/stream")
-def stream():
-	cookie_player = request.cookies.get('player_code')
-	cookie_password = request.cookies.get('password')
-	cookie_game_id = int(request.cookies.get('game_id', 0))
-	global games
-	if cookie_player and cookie_game_id and cookie_game_id in games and games[cookie_game_id]['password'][cookie_player] == cookie_password:
-		# Reuse existing password
-		game_id=cookie_game_id
-		player_code = cookie_player
-		player_password = cookie_password
-	else:
-		# Generate new code and password
-		game_id, player_code = assign_game_to_new_player()
-		player_password = get_new_password()
-		games[game_id]['password'][player_code] = player_password
-
-	def eventStream():
-		while True:
-			yield 'data: {}\n\n'.format(json.dumps({
-				'player_code': player_code,
-				'squares': games[game_id]['squares'],
-				'x_is_next': games[game_id]['x_is_next'],
-				'status': computeStatus(game_id),
-				'score': {'X': games[game_id]['score_for_x'], 'O': games[game_id]['score_for_o']},
-			}))
-			with games[game_id]['condition']:
-				games[game_id]['condition'].wait()
-
-	respose = Response(eventStream(), mimetype="text/event-stream")
-	respose.set_cookie('player_code', player_code)
-	respose.set_cookie('password', player_password)
-	respose.set_cookie('game_id', str(game_id))
-	return respose
-
 
 
 def calculateIsBoardFilled(squares):
@@ -187,6 +96,87 @@ def computeStatus(game_id):
 		'message': message,
 		'is_restartable': is_restartable,
 	}
+
+
+def create_app(test_config=None):
+	app = Flask(__name__, static_url_path='', static_folder='.')
+	@app.route("/")
+	def hello_world():
+		return redirect("/index.html")
+
+	@app.route("/stream")
+	def stream():
+		cookie_player = request.cookies.get('player_code')
+		cookie_password = request.cookies.get('password')
+		cookie_game_id = int(request.cookies.get('game_id', 0))
+		global games
+		if cookie_player and cookie_game_id and cookie_game_id in games and games[cookie_game_id]['password'][cookie_player] == cookie_password:
+			# Reuse existing password
+			game_id=cookie_game_id
+			player_code = cookie_player
+			player_password = cookie_password
+		else:
+			# Generate new code and password
+			game_id, player_code = assign_game_to_new_player()
+			player_password = get_new_password()
+			games[game_id]['password'][player_code] = player_password
+
+		def eventStream():
+			while True:
+				yield 'data: {}\n\n'.format(json.dumps({
+					'player_code': player_code,
+					'squares': games[game_id]['squares'],
+					'x_is_next': games[game_id]['x_is_next'],
+					'status': computeStatus(game_id),
+					'score': {'X': games[game_id]['score_for_x'], 'O': games[game_id]['score_for_o']},
+				}))
+				if test_config and test_config.get('TESTING'):
+					break
+				with games[game_id]['condition']:
+					games[game_id]['condition'].wait()
+
+		respose = Response(eventStream(), mimetype="text/event-stream")
+		respose.set_cookie('player_code', player_code)
+		respose.set_cookie('password', player_password)
+		respose.set_cookie('game_id', str(game_id))
+		return respose
+
+	@app.route("/reset-game")
+	def reset_game():
+		global games
+		game_id = int(request.cookies.get('game_id', 0))
+		if not check_password_for_player():
+			raise Exception('Wrong password')
+
+		if computeStatus(game_id)['is_restartable']:
+			games[game_id]['squares'] = [None] * 9
+			games[game_id]['x_is_next'] = games[game_id]['x_goes_next']
+			games[game_id]['x_goes_next'] = not games[game_id]['x_goes_next']
+			with games[game_id]['condition']:
+				games[game_id]['condition'].notify_all()
+		return ''
+
+	@app.route("/play-move")
+	def play_move():
+		global games
+		game_id = int(request.cookies.get('game_id', 0))
+		move = int(request.args['move'])
+		player = request.cookies['player_code']
+		if not check_password_for_player():
+			raise Exception('Wrong password for player ' + player)
+		player_is_x = player == 'X'
+		if (player_is_x == games[game_id]['x_is_next'] and
+				games[game_id]['squares'][move] is None and
+				not computeStatus(game_id)['winning_player']):
+			games[game_id]['squares'][move] = player
+			games[game_id]['x_is_next'] = not games[game_id]['x_is_next']
+			updateScoreNewMove(game_id)
+			with games[game_id]['condition']:
+				games[game_id]['condition'].notify_all()
+		return ''
+
+	return app
+
 
 '''
 TODO:
