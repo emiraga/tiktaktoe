@@ -35,6 +35,15 @@ function Board(props) {
   );
 }
 
+function getCook(cookiename) 
+  {
+  // Get name followed by anything except a semicolon
+  var cookiestring=RegExp(cookiename+"=[^;]+").exec(document.cookie);
+  // Return everything after the equal sign, or an empty string if the cookie name not found
+  return decodeURIComponent(!!cookiestring ? cookiestring.toString().replace(/^[^=]+./,"") : "");
+  }
+
+
 function Game(props) {
   var [playerCode, setPlayerCode] = React.useState(false);
   var [squares, setSquares] = React.useState(Array(9).fill(null));
@@ -44,7 +53,7 @@ function Game(props) {
 
   React.useEffect(
     () => {
-      var eventSource = new EventSource("/stream");
+      var eventSource = new EventSource("/stream?game_type="+props.gameType);
       eventSource.onmessage = (e) => {
         const data = JSON.parse(e.data);
         setPlayerCode(data.player_code);
@@ -95,6 +104,7 @@ function Game(props) {
         />
       </div>
       <div className="game-info">
+        <div>{props.gameType}</div>
         <div>You are: {playerCode}</div>
         <div>{status.message}</div>
         <hr />
@@ -104,9 +114,37 @@ function Game(props) {
       </div>
     </div>
   );
+}//
+
+function GameSelection(props) {
+  var [gameType, setGameType] = React.useState("");
+  React.useEffect(
+    () => {
+      var cookieGameType = getCook('game_type');
+      if(cookieGameType) setGameType(cookieGameType);
+    },
+    []
+  );
+  if(gameType===""){
+    return(
+      <div>
+        <h2>Choose game type:</h2>
+        <button onClick={() => setGameType("player_vs_computer")}>Player vs Computer</button>
+        <button onClick={() => setGameType("player_vs_player")}>Player vs Player</button>
+      </div>
+    );
+  }else{
+    return(
+      <div>
+        <Game gameType={gameType}/>
+        <input type="button" value="Change game type" onClick={() => setGameType("")} ></input>
+      </div>
+    );
+  }
+  
 }
 
 ReactDOM.render(
-  <Game />,
+  <GameSelection />,
   document.getElementById('root')
 );

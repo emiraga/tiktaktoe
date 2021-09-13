@@ -4,7 +4,7 @@ import threading
 import random
 import string
 
-
+last_single_player_id=0
 last_game_id = 0
 games = {}
 
@@ -13,10 +13,11 @@ def get_new_password():
 	return ''.join(random.choice(string.ascii_uppercase) for _ in range(10))
 
 
-def assign_game_to_new_player():
+def assign_game_to_new_player(gameType):
+	global last_single_player_id
 	global last_game_id
 	global games
-	if not last_game_id or not games[last_game_id]['single_player']:
+	if gameType=="player_vs_computer":
 		last_game_id+=1
 		games[last_game_id]={
 			'password' : {'X': None, 'O': None},
@@ -26,12 +27,28 @@ def assign_game_to_new_player():
 			'score_for_x' : 0,
 			'score_for_o' : 0,
 			'condition' : threading.Condition(),
-			'single_player': True,
+			'game_type' : gameType,
+		}
+		return last_game_id,'X'
+	if not last_single_player_id:
+		last_game_id+=1
+		last_single_player_id=last_game_id
+		games[last_single_player_id]={
+			'password' : {'X': None, 'O': None},
+			'squares' : [None] * 9,
+			'x_is_next' : True,
+			'x_goes_next' : False,
+			'score_for_x' : 0,
+			'score_for_o' : 0,
+			'condition' : threading.Condition(),
+			'game_type' : gameType,
+
 		}
 		return last_game_id,'X'
 	else:
-		games[last_game_id]['single_player']=False
-		return last_game_id,'O'
+		game_id=last_single_player_id
+		last_single_player_id=0
+		return game_id,'O'
 
 
 def check_password_for_player():
@@ -97,6 +114,13 @@ def computeStatus(game_id):
 		'is_restartable': is_restartable,
 	}
 
+def playComputerMove(game_id):
+	global games
+	for i in range(9):
+		if not games[game_id]['squares'][i]:
+			games[game_id]['squares'][i] = 'O'
+			games[game_id]['x_is_next'] = True
+			break
 
 def create_app(test_config=None):
 	app = Flask(__name__, static_url_path='', static_folder='.')
@@ -106,18 +130,26 @@ def create_app(test_config=None):
 
 	@app.route("/stream")
 	def stream():
+		gameType = request.args['game_type']
+		assert gameType
 		cookie_player = request.cookies.get('player_code')
 		cookie_password = request.cookies.get('password')
 		cookie_game_id = int(request.cookies.get('game_id', 0))
+		cookie_game_type = request.cookies.get('game_type')
 		global games
-		if cookie_player and cookie_game_id and cookie_game_id in games and games[cookie_game_id]['password'][cookie_player] == cookie_password:
+		if (cookie_player and cookie_game_id and 
+				cookie_game_id in games and 
+				games[cookie_game_id]['password'][cookie_player] == cookie_password and 
+				cookie_game_type and cookie_game_type==gameType and 
+				games[cookie_game_id]['game_type']==gameType):
 			# Reuse existing password
 			game_id=cookie_game_id
 			player_code = cookie_player
 			player_password = cookie_password
+
 		else:
 			# Generate new code and password
-			game_id, player_code = assign_game_to_new_player()
+			game_id, player_code = assign_game_to_new_player(gameType)
 			player_password = get_new_password()
 			games[game_id]['password'][player_code] = player_password
 
@@ -139,6 +171,7 @@ def create_app(test_config=None):
 		respose.set_cookie('player_code', player_code)
 		respose.set_cookie('password', player_password)
 		respose.set_cookie('game_id', str(game_id))
+		respose.set_cookie('game_type', gameType)
 		return respose
 
 	@app.route("/reset-game")
@@ -152,6 +185,8 @@ def create_app(test_config=None):
 			games[game_id]['squares'] = [None] * 9
 			games[game_id]['x_is_next'] = games[game_id]['x_goes_next']
 			games[game_id]['x_goes_next'] = not games[game_id]['x_goes_next']
+			if not games[game_id]['x_is_next']:
+				playComputerMove(game_id)
 			with games[game_id]['condition']:
 				games[game_id]['condition'].notify_all()
 		return ''
@@ -171,6 +206,10 @@ def create_app(test_config=None):
 			games[game_id]['squares'][move] = player
 			games[game_id]['x_is_next'] = not games[game_id]['x_is_next']
 			updateScoreNewMove(game_id)
+			if games[game_id]['game_type']=='player_vs_computer':
+				if not calculateWinner(games[game_id]['squares']):
+					playComputerMove(game_id)
+					updateScoreNewMove(game_id)
 			with games[game_id]['condition']:
 				games[game_id]['condition'].notify_all()
 		return ''
@@ -178,11 +217,14 @@ def create_app(test_config=None):
 	return app
 
 
+
+
 '''
 TODO:
  - choose local versus networked game
  - AI opponent, minimax search
  - Automatic Testing
+ - Periodic ping
 
 MINOR changes:
  - add locking for all operations. a = threading.Lock()
