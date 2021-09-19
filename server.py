@@ -101,19 +101,16 @@ def computeStatus(game_id):
     winning_player = None
     if player:
         winning_player = player
-        message = 'Winner ' + player
         is_restartable = True
     elif calculateIsBoardFilled(games[game_id]['squares']):
-        message = 'Nobody wins :('
         is_restartable = True
     else:
-        message = 'Next player: ' + ('X' if games[game_id]['x_is_next'] else 'O')
         is_restartable = False
     return {
         'winning_player': winning_player,
-        'message': message,
         'is_restartable': is_restartable,
     }
+
 
 def playComputerMove(game_id):
     global games
@@ -218,8 +215,6 @@ def create_app(test_config=None):
     return app
 
 
-
-
 '''
 TODO:
  - choose local versus networked game
@@ -234,4 +229,6 @@ MINOR changes:
 TODO cleanup:
  - reduce number of global variable
  - use class for better abstraction
+ - use linter for python and javascript
+ - compile javascript JXS in advance
 '''

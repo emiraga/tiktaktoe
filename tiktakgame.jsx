@@ -1,10 +1,13 @@
+const SymbolsContext = React.createContext({});
+
 function Square(props){
+  const symbols = React.useContext(SymbolsContext);
   return (
     <button 
       className="square" 
       onClick={props.onClick}
     >
-      {props.value}
+      {props.value ? symbols[props.value] : ''}
     </button>
   );
 }
@@ -66,7 +69,7 @@ function Game(props) {
     },
     []
   );
-
+  const symbols = React.useContext(SymbolsContext);
 
   function handleClick(i){
     if (status.winning_player || squares[i]){
@@ -91,8 +94,16 @@ function Game(props) {
   }
 
   let reset_button = <React.Fragment />;
+  let message;
   if (status.is_restartable) {
     reset_button = <input type="button" value="Reset" onClick={() => handleReset()} ></input>;
+    if (status.winning_player) {
+      message = 'Winner ' + symbols[status.winning_player];
+    } else {
+      message = 'Nobody wins :(';
+    }
+  } else {
+    message = 'Next player: ' + symbols[xIsNext ? 'X' : 'O'];
   }
 
   return (
@@ -105,16 +116,17 @@ function Game(props) {
       </div>
       <div className="game-info">
         <div>{props.gameType}</div>
-        <div>You are: {playerCode}</div>
-        <div>{status.message}</div>
+        <div>You are: {symbols[playerCode]}</div>
+        <div>{message}</div>
         <hr />
-        <div>X vs O</div>
+        <div>{symbols['X']} vs {symbols['O']}</div>
         <div>{score.X} : {score.O}</div>
         {reset_button}
+        <input type="button" value="Change game type" onClick={props.changeGameTypeCallback} ></input>
       </div>
     </div>
   );
-}//
+}
 
 function GameSelection(props) {
   var [gameType, setGameType] = React.useState("");
@@ -136,12 +148,12 @@ function GameSelection(props) {
   }else{
     return(
       <div>
-        <Game gameType={gameType}/>
-        <input type="button" value="Change game type" onClick={() => setGameType("")} ></input>
+        <SymbolsContext.Provider value={{'X': '❌', 'O': '⭕'}}>
+          <Game gameType={gameType} changeGameTypeCallback={() => setGameType("")} />
+        </SymbolsContext.Provider>
       </div>
     );
   }
-  
 }
 
 ReactDOM.render(
