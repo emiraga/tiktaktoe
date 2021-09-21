@@ -53,6 +53,7 @@ function Game(props) {
   var [xIsNext, setXIsNext] = React.useState(true);
   var [status, setStatus] = React.useState({});
   var [score, setScore] = React.useState({});
+  var [serverMessage, setServerMessage] = React.useState("");
 
   React.useEffect(
     () => {
@@ -66,6 +67,18 @@ function Game(props) {
         setScore(data.score);
       };
       return () => eventSource.close();
+    },
+    []
+  );
+  React.useEffect(
+    () => {
+      var timer = setInterval(() => {
+        fetch('/ping')
+        .then(response => response.json())
+        .then(data => setServerMessage(data["error_message"]));
+      }, 5000);
+
+      return () => clearInterval(timer);
     },
     []
   );
@@ -116,7 +129,8 @@ function Game(props) {
       </div>
       <div className="game-info">
         <div>{props.gameType}</div>
-        <div>You are: {symbols[playerCode]}</div>
+        {props.gameType!="two_players" ? <div>You are: {symbols[playerCode]}</div> : null}
+        {serverMessage? <div>{serverMessage}</div> : null}
         <div>{message}</div>
         <hr />
         <div>{symbols['X']} vs {symbols['O']}</div>
@@ -143,6 +157,7 @@ function GameSelection(props) {
         <h2>Choose game type:</h2>
         <button onClick={() => setGameType("player_vs_computer")}>Player vs Computer</button>
         <button onClick={() => setGameType("player_vs_player")}>Player vs Player</button>
+        <button onClick={() => setGameType("two_players")}>Two Players</button>
       </div>
     );
   }else{

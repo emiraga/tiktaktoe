@@ -2,7 +2,8 @@ import json
 import threading
 import random
 import string
-from flask import Flask, Response, redirect, request
+import time
+from flask import Flask, Response, redirect, request, jsonify
 
 games = {}
 last_single_player_id = 0
@@ -20,6 +21,7 @@ class Game:
         self.condition = threading.Condition()
         self.game_type = game_type
         self.game_id = game_id
+        self.last_ping_response = {'X': 0, 'O': 0}
 
     def update_score_new_move(self):
         winner = self.compute_status()['winning_player']
@@ -104,7 +106,7 @@ def assign_game_to_new_player(gameType):
     global last_game_id
     global games
     password = get_new_password()
-    if gameType == "player_vs_computer":
+    if gameType == "player_vs_computer" or gameType == "two_players":
         last_game_id += 1
         games[last_game_id] = Game(last_game_id, gameType)
         games[last_game_id].assign_password('X', password)
@@ -217,6 +219,8 @@ def create_app(test_config=None):
     def play_move():
         move = int(request.args['move'])
         game, player = check_and_get_game()
+        if (game and game.game_type=='two_players' and not game.x_is_next):
+            player = 'O'
         player_is_x = player == 'X'
         if (game and player_is_x == game.x_is_next and
                 game.squares[move] is None and
@@ -232,15 +236,39 @@ def create_app(test_config=None):
                 game.condition.notify_all()
         return ''
 
+    @app.route("/ping")
+    def ping():
+        game, player = check_and_get_game()
+        if game:
+            game.last_ping_response[player] = time.time()
+            last_ping_response_time = min(game.last_ping_response.values())
+            if game.game_type == 'player_vs_player':
+                if not last_ping_response_time:
+                    return {
+                        "error_message": "Waiting for player"
+                    }
+
+                if time.time() - last_ping_response_time > 120:
+                    return {
+                        "error_message": "Player disconnected"
+                    }
+
+            return {
+                "error_message": None
+            }
+        return {
+            "error_message": "Invalid game"
+        }
+
+
+
     return app
 
 
 '''
 TODO:
- - choose local versus networked game
- - AI opponent, minimax search
- - Automatic Testing
- - Periodic ping
+ - Add chat
+ - Add database
 
 MINOR changes:
  - add locking for all operations. a = threading.Lock()
