@@ -54,9 +54,45 @@ class Game:
 
 
 def compute_best_move(squares):
+    best_score=-1000
+    best_move=None
     for i in range(9):
         if not squares[i]:
-            return i
+            squares[i]='O'
+            score=minimax(squares,False)
+            squares[i]=None
+            if score>best_score:
+                best_score=score
+                best_move=i
+    return best_move
+            
+def minimax(squares, is_maximizing):
+    winner=calculate_winner(squares)
+    if winner=='X':
+        return -1
+    elif winner=='O':
+        return 1
+    if calculate_is_board_filled(squares):
+        return 0
+    if is_maximizing:
+        best_score=-1000
+        for i in range(9):
+            if not squares[i]:
+                squares[i]='O'
+                score=minimax(squares,False)
+                squares[i]=None
+                if score>best_score:
+                    best_score=score
+        return best_score
+    best_score=1000
+    for i in range(9):
+        if not squares[i]:
+            squares[i]='X'
+            score=minimax(squares,True)
+            squares[i]=None
+            if score<best_score:
+                best_score=score
+    return best_score
 
 
 def get_new_password():

@@ -1,6 +1,6 @@
 import pytest
 import json
-from server import create_app
+from server import create_app, calculate_is_board_filled
 
 
 @pytest.fixture
@@ -64,3 +64,7 @@ def test_single_player_and_multiplayer(client1,client2,client3):
 
     assert extract_cookie(rv1, 'game_id') == extract_cookie(rv3, 'game_id')
     assert extract_cookie(rv1, 'game_id') != extract_cookie(rv2, 'game_id')
+
+def test_calculate_is_board_filled():
+    assert calculate_is_board_filled(["X", "O"])
+    assert not calculate_is_board_filled(["X", None, "O"])
