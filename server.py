@@ -3,24 +3,24 @@ import threading
 import random
 import string
 import time
+import sqlite3
+import os
 from flask import Flask, Response, redirect, request, jsonify
 
 games = {}
-last_single_player_id = 0
-last_game_id = 0
 
 
 class Game:
-    def __init__(self, game_id, game_type):
+    def __init__(self, game_type):
         self.password = {'X': None, 'O': None}
         self.squares = [None] * 9
         self.x_is_next = True
         self.x_goes_next = False
+        self.o_connected = False
         self.score_for_x = 0
         self.score_for_o = 0
         self.condition = threading.Condition()
         self.game_type = game_type
-        self.game_id = game_id
         self.last_ping_response = {'X': 0, 'O': 0}
 
     def update_score_new_move(self):
@@ -53,6 +53,35 @@ class Game:
 
     def assign_password(self, player_code, player_password):
         self.password[player_code] = player_password
+
+    def save_new_game_to_database(self):
+        with sqlite3.connect('games.db') as con:
+            cur = con.cursor()
+            cur.execute('''INSERT INTO game (
+                    password, squares, x_is_next, x_goes_next, 
+                    o_connected, score_for_x, score_for_o,
+                    game_type, last_ping_response
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (json.dumps(self.password), json.dumps(self.squares), int(self.x_is_next), 
+                    int(self.x_goes_next), int(self.o_connected), self.score_for_x, self.score_for_o,
+                    self.game_type, json.dumps(self.last_ping_response)))
+            con.commit()
+            self.game_id = cur.lastrowid
+
+    def update_record_in_database(self):
+        with sqlite3.connect('games.db') as con:
+            cur = con.cursor()
+            cur.execute(
+                '''UPDATE game SET 
+                    password = ?, squares = ?, x_is_next = ?, 
+                    x_goes_next = ?, o_connected = ?, score_for_x = ?, 
+                    score_for_o = ?, game_type = ?, last_ping_response = ?
+                WHERE game_id = ?''',
+                (json.dumps(self.password), json.dumps(self.squares), int(self.x_is_next), 
+                    int(self.x_goes_next), int(self.o_connected), self.score_for_x, self.score_for_o,
+                    self.game_type, json.dumps(self.last_ping_response), self.game_id)
+            )
+            con.commit()
 
 
 def compute_best_move(squares):
@@ -101,28 +130,46 @@ def get_new_password():
     return ''.join(random.choice(string.ascii_uppercase) for _ in range(10))
 
 
+def load_games_from_database():
+    with sqlite3.connect('games.db') as con:
+        cur = con.cursor()
+        cur.execute('''SELECT game_id, password, squares, x_is_next, x_goes_next, 
+                    o_connected, score_for_x, score_for_o,
+                    game_type, last_ping_response FROM game''')
+        for row in cur.fetchall():
+            game = Game(row[8])
+            game.game_id = row[0]
+            game.password = json.loads(row[1])
+            game.squares = json.loads(row[2])
+            game.x_is_next = bool(row[3])
+            game.x_goes_next = bool(row[4])
+            game.o_connected = bool(row[5])
+            game.score_for_x = row[6]
+            game.score_for_o = row[7]
+            game.last_ping_response = json.loads(row[9])
+            games[game.game_id] = game
+
+
 def assign_game_to_new_player(gameType):
-    global last_single_player_id
-    global last_game_id
     global games
     password = get_new_password()
-    if gameType == "player_vs_computer" or gameType == "two_players":
-        last_game_id += 1
-        games[last_game_id] = Game(last_game_id, gameType)
-        games[last_game_id].assign_password('X', password)
-        return games[last_game_id], 'X'
+    if gameType == "player_vs_player":
+        with sqlite3.connect('games.db') as con:
+            cur = con.cursor()
+            cur.execute('SELECT game_id FROM game WHERE game_type="player_vs_player" and o_connected=0')
+            row = cur.fetchone()
+        if row is not None:
+            game_id = row[0]
+            games[game_id].assign_password('O', password)
+            games[game_id].o_connected = True
+            games[game_id].update_record_in_database()
+            return games[game_id], 'O'
 
-    if not last_single_player_id:
-        last_game_id += 1
-        last_single_player_id = last_game_id
-        games[last_game_id] = Game(last_game_id, gameType)
-        games[last_game_id].assign_password('X', password)
-        return games[last_game_id], 'X'
-
-    game_id = last_single_player_id
-    last_single_player_id = 0
-    games[game_id].assign_password('O', password)
-    return games[game_id], 'O'
+    game = Game(gameType)
+    game.assign_password('X', password)
+    game.save_new_game_to_database()
+    games[game.game_id] = game
+    return game, 'X'
 
 
 def check_and_get_game():
@@ -166,6 +213,25 @@ def calculate_winner(squares):
 
 
 def create_app(test_config=None):
+    if os.path.exists('games.db'):
+        load_games_from_database()
+    else:
+        with sqlite3.connect('games.db') as con:
+            cur = con.cursor()
+            cur.execute('''CREATE TABLE game(
+                game_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                password TEXT,
+                squares TEXT,
+                x_is_next INTEGER,
+                x_goes_next INTEGER,
+                o_connected INTEGER,
+                score_for_x INTEGER,
+                score_for_o INTEGER,
+                game_type INTEGER,
+                last_ping_response TEXT
+            )''')
+            con.commit()
+
     app = Flask(__name__, static_url_path='', static_folder='.')
     @app.route("/")
     def hello_world():
@@ -211,6 +277,7 @@ def create_app(test_config=None):
             game.x_goes_next = not game.x_goes_next
             if game.game_type == 'player_vs_computer' and not game.x_is_next:
                 game.play_computer_move()
+            game.update_record_in_database()
             with game.condition:
                 game.condition.notify_all()
         return ''
@@ -232,6 +299,7 @@ def create_app(test_config=None):
                 if not calculate_winner(game.squares):
                     game.play_computer_move()
                     game.update_score_new_move()
+            game.update_record_in_database()
             with game.condition:
                 game.condition.notify_all()
         return ''
@@ -241,6 +309,7 @@ def create_app(test_config=None):
         game, player = check_and_get_game()
         if game:
             game.last_ping_response[player] = time.time()
+            game.update_record_in_database()
             last_ping_response_time = min(game.last_ping_response.values())
             if game.game_type == 'player_vs_player':
                 if not last_ping_response_time:
@@ -259,9 +328,6 @@ def create_app(test_config=None):
         return {
             "error_message": "Invalid game"
         }
-
-
-
     return app
 
 
