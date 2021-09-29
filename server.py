@@ -98,10 +98,10 @@ def compute_best_move(squares):
     return best_move
             
 def minimax(squares, is_maximizing):
-    winner=calculate_winner(squares)
-    if winner=='X':
+    winner = calculate_winner(squares)
+    if winner == 'X':
         return -1
-    elif winner=='O':
+    elif winner == 'O':
         return 1
     if calculate_is_board_filled(squares):
         return 0
@@ -334,7 +334,8 @@ def create_app(test_config=None):
 '''
 TODO:
  - Add chat
- - Add database
+ - Add more advanced database
+ - Add cleanup of old games
 
 MINOR changes:
  - add locking for all operations. a = threading.Lock()
