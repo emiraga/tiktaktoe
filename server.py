@@ -22,6 +22,7 @@ class Game:
         self.condition = threading.Condition()
         self.game_type = game_type
         self.last_ping_response = {'X': 0, 'O': 0}
+        self.messages = []
 
     def update_score_new_move(self):
         winner = self.compute_status()['winning_player']
@@ -60,11 +61,11 @@ class Game:
             cur.execute('''INSERT INTO game (
                     password, squares, x_is_next, x_goes_next, 
                     o_connected, score_for_x, score_for_o,
-                    game_type, last_ping_response
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    game_type, last_ping_response, messages
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                 (json.dumps(self.password), json.dumps(self.squares), int(self.x_is_next), 
                     int(self.x_goes_next), int(self.o_connected), self.score_for_x, self.score_for_o,
-                    self.game_type, json.dumps(self.last_ping_response)))
+                    self.game_type, json.dumps(self.last_ping_response), json.dumps(self.messages)))
             con.commit()
             self.game_id = cur.lastrowid
 
@@ -75,11 +76,11 @@ class Game:
                 '''UPDATE game SET 
                     password = ?, squares = ?, x_is_next = ?, 
                     x_goes_next = ?, o_connected = ?, score_for_x = ?, 
-                    score_for_o = ?, game_type = ?, last_ping_response = ?
+                    score_for_o = ?, game_type = ?, last_ping_response = ?, messages = ?
                 WHERE game_id = ?''',
                 (json.dumps(self.password), json.dumps(self.squares), int(self.x_is_next), 
                     int(self.x_goes_next), int(self.o_connected), self.score_for_x, self.score_for_o,
-                    self.game_type, json.dumps(self.last_ping_response), self.game_id)
+                    self.game_type, json.dumps(self.last_ping_response), json.dumps(self.messages), self.game_id)
             )
             con.commit()
 
@@ -135,7 +136,7 @@ def load_games_from_database():
         cur = con.cursor()
         cur.execute('''SELECT game_id, password, squares, x_is_next, x_goes_next, 
                     o_connected, score_for_x, score_for_o,
-                    game_type, last_ping_response FROM game''')
+                    game_type, last_ping_response, messages FROM game''')
         for row in cur.fetchall():
             game = Game(row[8])
             game.game_id = row[0]
@@ -147,6 +148,7 @@ def load_games_from_database():
             game.score_for_x = row[6]
             game.score_for_o = row[7]
             game.last_ping_response = json.loads(row[9])
+            game.messages = json.loads(row[10])
             games[game.game_id] = game
 
 
@@ -228,7 +230,8 @@ def create_app(test_config=None):
                 score_for_x INTEGER,
                 score_for_o INTEGER,
                 game_type INTEGER,
-                last_ping_response TEXT
+                last_ping_response TEXT,
+                messages TEXT
             )''')
             con.commit()
 
@@ -255,6 +258,7 @@ def create_app(test_config=None):
                     'x_is_next': game.x_is_next,
                     'status': game.compute_status(),
                     'score': {'X': game.score_for_x, 'O': game.score_for_o},
+                    'messages' : game.messages,
                 }))
                 if test_config and test_config.get('TESTING'):
                     break
@@ -328,6 +332,15 @@ def create_app(test_config=None):
         return {
             "error_message": "Invalid game"
         }
+
+    @app.route("/api/new-message", methods=["POST"])
+    def sendMessage():
+        game, player = check_and_get_game()
+        game.messages.append({"message":player+": "+request.json["newMessage"]})
+        with game.condition:
+            game.condition.notify_all()
+        return jsonify(game.messages)
+
     return app
 
 

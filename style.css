@@ -52,3 +52,15 @@ ol, ul {
 .lista{
   cursor: pointer;
 }
+
+.chat{
+  padding-left: 20px;
+  font-size: 20px;
+  
+}
+
+.messageWindow{
+  overflow-y: scroll;
+  list-style-type: none;
+  height: 300px;
+}

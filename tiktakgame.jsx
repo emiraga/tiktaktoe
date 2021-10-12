@@ -54,6 +54,7 @@ function Game(props) {
   var [status, setStatus] = React.useState({});
   var [score, setScore] = React.useState({});
   var [serverMessage, setServerMessage] = React.useState("");
+  var [messages, setMessages] = React.useState([]);
 
   React.useEffect(
     () => {
@@ -65,6 +66,7 @@ function Game(props) {
         setXIsNext(data.x_is_next);
         setStatus(data.status);
         setScore(data.score);
+        setMessages(data.messages);
       };
       return () => eventSource.close();
     },
@@ -82,6 +84,14 @@ function Game(props) {
     },
     []
   );
+
+  React.useEffect(
+    () => {
+
+    },
+    []
+  );
+
   const symbols = React.useContext(SymbolsContext);
 
   function handleClick(i){
@@ -119,6 +129,16 @@ function Game(props) {
     message = 'Next player: ' + symbols[xIsNext ? 'X' : 'O'];
   }
 
+  let chatMessages = messages.map(
+    text => {
+      return(
+        <li key="text">{text["message"]}</li>
+      );
+    }
+  );
+
+
+
   return (
     <div className="game">
       <div className="game-board">
@@ -129,7 +149,7 @@ function Game(props) {
       </div>
       <div className="game-info">
         <div>{props.gameType}</div>
-        {props.gameType!="two_players" ? <div>You are: {symbols[playerCode]}</div> : null}
+        {props.gameType != "two_players" ? <div>You are: {symbols[playerCode]}</div> : null}
         {serverMessage? <div>{serverMessage}</div> : null}
         <div>{message}</div>
         <hr />
@@ -138,6 +158,24 @@ function Game(props) {
         {reset_button}
         <input type="button" value="Change game type" onClick={props.changeGameTypeCallback} ></input>
       </div>
+      {props.gameType == "player_vs_player" ? <div className = "chat">
+        <h1>Chat:</h1>
+        <ul className = "messageWindow">{chatMessages}</ul>
+        <br/>
+        <input type="text" name="newMessage" id="newMessage" autocomplete="off"/>
+        <input type="button" value="Send" onClick={() => {
+          const requestOptions = {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ newMessage: document.getElementById("newMessage").value })
+          };
+          fetch('/api/new-message', requestOptions)
+            .then(response => response.json())
+            .then(data => this.setState({messages : data}),error => console.log(error));
+
+          document.getElementById("newMessage").value="";
+        }}/>
+      </div> : null}
     </div>
   );
 }
